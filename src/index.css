@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Apply base styles: use Inter font, light theme */
+body {
+  @apply font-sans bg-white text-gray-900;
+}
