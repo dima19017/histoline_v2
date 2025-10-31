@@ -1,5 +1,0 @@
-node -v
-npm -v
-npm install
-mv postcss.config.js postcss.config.cjs
-mv tailwind.config.js tailwind.config.cjs
