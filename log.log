@@ -1,0 +1,10 @@
+sudo apt update
+sudo apt upgrade -y
+sudo apt install -y nodejs npm
+
+node -v
+npm -v
+
+npx create-react-app histoline_v2
+
+npm install      # убедимся, что все зависимости установлены
