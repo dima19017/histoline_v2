@@ -2,13 +2,92 @@ import React, { useEffect, useMemo, useState } from "react";
 
 // Пример данных
 const people = [
-  { name: "Пушкин А.С.", birthDate: 1799, deathDate: 1837 },
-  { name: "Лермонтов М.Ю.", birthDate: 1814, deathDate: 1841 },
-  { name: "Толстой Л.Н.", birthDate: 1828, deathDate: 1910 },
+  {
+    name: "Пушкин А.С.",
+    birthDate: 1799,
+    deathDate: 1837,
+    description: "Русский поэт и писатель, основоположник современного русского литературного языка."
+  },
+  {
+    name: "Лермонтов М.Ю.",
+    birthDate: 1814,
+    deathDate: 1841,
+    description: "Русский поэт и прозаик, автор романа 'Герой нашего времени'."
+  },
+  {
+    name: "Толстой Л.Н.",
+    birthDate: 1828,
+    deathDate: 1910,
+    description: "Русский писатель, автор 'Войны и мира' и 'Анны Карениной'."
+  },
 ];
 
-const Timeline = ({ visibleStartYear, visibleEndYear }) => {
+const events = [
+  {
+    title: "Падение Западной Римской империи",
+    startYear: 476,
+    endYear: 476,
+    description: "Свержение Ромула Августа и конец античного западного мира."
+  },
+  {
+    title: "Подписание Великой хартии вольностей",
+    startYear: 1215,
+    endYear: 1215,
+    description: "Король Иоанн Безземельный признал права английской знати и ограничил абсолютную монархию."
+  },
+  {
+    title: "Изобретение печатного станка",
+    startYear: 1440,
+    endYear: 1440,
+    description: "Иоганн Гутенберг создал печатный станок с подвижными литерами."
+  },
+  {
+    title: "Открытие Америки Колумбом",
+    startYear: 1492,
+    endYear: 1492,
+    description: "Экспедиция Христофора Колумба достигла берегов Нового Света."
+  },
+  {
+    title: "Великая французская революция",
+    startYear: 1789,
+    endYear: 1799,
+    description: "Революция, приведшая к падению монархии и утверждению республиканских идей во Франции."
+  },
+  {
+    title: "Первая мировая война",
+    startYear: 1914,
+    endYear: 1918,
+    description: "Глобальный конфликт, вовлёкший крупнейшие державы мира."
+  },
+  {
+    title: "Вторая мировая война",
+    startYear: 1939,
+    endYear: 1945,
+    description: "Всемирная война 1939–1945 годов, крупнейший вооружённый конфликт в истории человечества."
+  },
+  {
+    title: "Высадка человека на Луну",
+    startYear: 1969,
+    endYear: 1969,
+    description: "Аполлон-11 доставил Нила Армстронга и Базза Олдрина на поверхность Луны."
+  },
+  {
+    title: "Великие реформы Александра II",
+    startYear: 1861,
+    endYear: 1874,
+    description: "Комплекс преобразований в Российской империи, включающий отмену крепостного права и военную реформу."
+  },
+  {
+    title: "Отмена крепостного права в России",
+    startYear: 1861,
+    endYear: 1861,
+    description: "Манифест Александра II об освобождении крестьян от крепостной зависимости."
+  },
+];
+
+const Timeline = ({ visibleStartYear, visibleEndYear, onHoverChange }) => {
   const lineHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+  const yearsPerPixel = (visibleEndYear - visibleStartYear) / Math.max(1, lineHeight);
 
   const yearToY = (year) => ((year - visibleStartYear) / (visibleEndYear - visibleStartYear)) * lineHeight;
 
@@ -57,7 +136,33 @@ const Timeline = ({ visibleStartYear, visibleEndYear }) => {
           const labelOffset = 8;
           const isLeft = col < 0;
           return (
-            <g key={`${p.name}-${col}`}>
+            <g
+              key={`${p.name}-${col}`}
+              style={{ cursor: 'pointer' }}
+              onMouseEnter={(e) => {
+                onHoverChange({
+                  visible: true,
+                  title: p.name,
+                  subtitle: `${p.birthDate} — ${p.deathDate}`,
+                  description: p.description,
+                  x: e.clientX + 18,
+                  y: e.clientY - 12,
+                });
+              }}
+              onMouseMove={(e) => {
+                onHoverChange({
+                  visible: true,
+                  title: p.name,
+                  subtitle: `${p.birthDate} — ${p.deathDate}`,
+                  description: p.description,
+                  x: e.clientX + 18,
+                  y: e.clientY - 12,
+                });
+              }}
+              onMouseLeave={() => {
+                onHoverChange({ visible: false });
+              }}
+            >
               <line x1={x} x2={x} y1={yStart} y2={yEnd} stroke={color} strokeWidth={6} />
               <text
                 x={isLeft ? x - labelOffset : x + labelOffset}
@@ -72,18 +177,125 @@ const Timeline = ({ visibleStartYear, visibleEndYear }) => {
           );
         });
       })()}
+      {(() => {
+        const getEventStart = (ev) => ev.startYear ?? ev.year;
+        const getEventEnd = (ev) => ev.endYear ?? ev.year;
+
+        const sortedEvents = [...events].sort((a, b) => getEventStart(a) - getEventStart(b));
+        const columnLastEndYear = new Map();
+        const baseAxisX = axisX;
+        const columnSpacing = 18;
+        const minGapYears = Math.max(1, yearsPerPixel * 28);
+        const placements = [];
+
+        const candidateCol = (i) => {
+          if (i === 0) return 0;
+          const magnitude = Math.floor((i - 1) / 2) + 1;
+          const sign = (i - 1) % 2 === 0 ? 1 : -1;
+          return sign * magnitude;
+        };
+
+        for (const ev of sortedEvents) {
+          let chosen = null;
+          for (let i = 0; i < 120; i++) {
+            const col = candidateCol(i);
+            const lastEnd = columnLastEndYear.get(col);
+            const startYear = getEventStart(ev);
+            const endYear = getEventEnd(ev);
+            if (lastEnd === undefined || startYear - lastEnd >= minGapYears) {
+              chosen = col;
+              columnLastEndYear.set(col, endYear);
+              break;
+            }
+          }
+          if (chosen === null) {
+            chosen = candidateCol(120);
+          }
+          placements.push({ event: ev, col: chosen });
+        }
+
+        return placements.map(({ event: ev, col }, idx) => {
+          const startYear = getEventStart(ev);
+          const endYear = Math.max(getEventEnd(ev), startYear);
+          const yStart = yearToY(startYear);
+          const yEnd = yearToY(endYear);
+          const yMarker = endYear !== startYear ? (yStart + yEnd) / 2 : yStart;
+          const x = baseAxisX + col * columnSpacing;
+          const isLeft = col < 0;
+          const color = ['#7c3aed', '#f97316', '#22c55e', '#e11d48', '#14b8a6'][idx % 5];
+          const labelOffset = 10;
+          const subtitle = startYear === endYear ? `${startYear} год` : `${startYear} — ${endYear} гг.`;
+          return (
+            <g
+              key={`${ev.title}-${col}`}
+              style={{ cursor: 'pointer' }}
+              onMouseEnter={(e) => {
+                onHoverChange({
+                  visible: true,
+                  title: ev.title,
+                  subtitle,
+                  description: ev.description,
+                  x: e.clientX + 18,
+                  y: e.clientY - 12,
+                });
+              }}
+              onMouseMove={(e) => {
+                onHoverChange({
+                  visible: true,
+                  title: ev.title,
+                  subtitle,
+                  description: ev.description,
+                  x: e.clientX + 18,
+                  y: e.clientY - 12,
+                });
+              }}
+              onMouseLeave={() => {
+                onHoverChange({ visible: false });
+              }}
+            >
+              {endYear !== startYear && (
+                <line x1={x} x2={x} y1={yStart} y2={yEnd} stroke={color} strokeWidth={4} strokeLinecap="round" />
+              )}
+              <circle cx={x} cy={yMarker} r={6} fill={color} stroke="#fff" strokeWidth={2} />
+              <text
+                x={isLeft ? x - labelOffset : x + labelOffset}
+                y={yMarker + 4}
+                fontSize={11}
+                fill="#222"
+                textAnchor={isLeft ? 'end' : 'start'}
+              >
+                {ev.title}
+              </text>
+            </g>
+          );
+        });
+      })()}
     </svg>
   );
 };
 
 function App() {
-  const dataMaxYear = Math.max(...people.map(p => p.deathDate));
   const currentYear = new Date().getFullYear();
+  const allYears = [
+    ...people.map(p => p.deathDate),
+    ...events.map(e => (e.endYear ?? e.year)),
+    ...events.map(e => (e.startYear ?? e.year)),
+    currentYear
+  ];
+  const dataMaxYear = Math.max(...allYears);
   const globalMinYear = 0;
   const globalMaxYear = Math.max(dataMaxYear, currentYear);
 
   const [centerYear, setCenterYear] = useState(currentYear);
   const [yearsPerScreen, setYearsPerScreen] = useState(globalMaxYear - globalMinYear);
+  const [tooltip, setTooltip] = useState({
+    visible: false,
+    title: '',
+    subtitle: '',
+    description: '',
+    x: 0,
+    y: 0,
+  });
 
   const [visibleStartYear, visibleEndYear] = useMemo(() => {
     const half = yearsPerScreen / 2;
@@ -123,6 +335,25 @@ function App() {
   };
   const zoomOut = () => {
     setYearsPerScreen(prev => Math.min(globalMaxYear - globalMinYear, Math.round(prev * 2)));
+  };
+
+  const updateTooltip = (update) => {
+    setTooltip(prev => {
+      const next = { ...prev, ...update };
+      if (typeof window !== 'undefined') {
+        const margin = 16;
+        const tooltipWidth = 260;
+        if (update.x !== undefined) {
+          const maxX = window.innerWidth - margin - tooltipWidth;
+          next.x = Math.min(Math.max(update.x, margin), Math.max(margin, maxX));
+        }
+        if (update.y !== undefined) {
+          const maxY = window.innerHeight - margin;
+          next.y = Math.min(Math.max(update.y, margin), Math.max(margin, maxY));
+        }
+      }
+      return next;
+    });
   };
 
   const onWheel = (e) => {
@@ -188,8 +419,39 @@ function App() {
         ))}
       </div>
       <div style={{ width: '420px', height: '100vh' }}>
-        <Timeline visibleStartYear={visibleStartYear} visibleEndYear={visibleEndYear} />
+        <Timeline
+          visibleStartYear={visibleStartYear}
+          visibleEndYear={visibleEndYear}
+          onHoverChange={updateTooltip}
+        />
       </div>
+      {tooltip.title && (
+        <div
+          style={{
+            position: 'fixed',
+            top: tooltip.y,
+            left: tooltip.x,
+            transform: `translateY(-110%) scale(${tooltip.visible ? 1 : 0.96})`,
+            opacity: tooltip.visible ? 1 : 0,
+            transition: 'opacity 0.16s ease, transform 0.2s ease',
+            pointerEvents: 'none',
+            background: 'rgba(15, 23, 42, 0.9)',
+            color: '#e2e8f0',
+            padding: '12px 16px',
+            borderRadius: '14px',
+            boxShadow: '0 18px 32px rgba(15, 23, 42, 0.35)',
+            minWidth: 220,
+            maxWidth: 260,
+            backdropFilter: 'blur(6px)',
+            zIndex: 1000,
+            border: '1px solid rgba(148, 163, 184, 0.25)'
+          }}
+        >
+          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{tooltip.title}</div>
+          <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>{tooltip.subtitle}</div>
+          <div style={{ fontSize: 13, lineHeight: 1.45 }}>{tooltip.description}</div>
+        </div>
+      )}
     </div>
   );
 }
