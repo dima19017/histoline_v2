@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // Пример данных
 const people = [
@@ -85,17 +85,49 @@ const events = [
   },
 ];
 
-const Timeline = ({ visibleStartYear, visibleEndYear, onHoverChange }) => {
+const Timeline = ({
+  visibleStartYear,
+  visibleEndYear,
+  onHoverChange,
+  onCursorMove,
+  showPeople,
+  showEvents,
+}) => {
   const lineHeight = typeof window !== "undefined" ? window.innerHeight : 0;
   const yearsPerPixel = (visibleEndYear - visibleStartYear) / Math.max(1, lineHeight);
 
   const yearToY = (year) => ((year - visibleStartYear) / (visibleEndYear - visibleStartYear)) * lineHeight;
 
   const axisX = 180; // сдвигаем ось правее, чтобы слева было место под подписи
+  const handleMouseMove = (event) => {
+    if (!onCursorMove) return;
+    const svgElement = event.currentTarget;
+    const rect = svgElement.getBoundingClientRect();
+    const relativeY = event.clientY - rect.top;
+    const clampedY = Math.max(0, Math.min(relativeY, rect.height));
+    const year = visibleStartYear + (clampedY / rect.height) * (visibleEndYear - visibleStartYear);
+    onCursorMove({
+      visible: true,
+      screenY: event.clientY,
+      year,
+    });
+  };
+
+  const handleMouseLeave = () => {
+    if (!onCursorMove) return;
+    onCursorMove({ visible: false });
+  };
+
   return (
-    <svg width={420} height={lineHeight}>
+    <svg
+      width={420}
+      height={lineHeight}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
       <line x1={axisX} y1={0} x2={axisX} y2={lineHeight} stroke="black" strokeWidth={2} />
       {(() => {
+        if (!showPeople) return null;
         // Плотная раскладка у оси: альтернативно вправо/влево, без вертикальных пересечений в колонке
         const sorted = [...people].sort((a, b) => a.birthDate - b.birthDate);
         const columnLastEndYear = new Map(); // colIndex -> last death year
@@ -178,6 +210,7 @@ const Timeline = ({ visibleStartYear, visibleEndYear, onHoverChange }) => {
         });
       })()}
       {(() => {
+        if (!showEvents) return null;
         const getEventStart = (ev) => ev.startYear ?? ev.year;
         const getEventEnd = (ev) => ev.endYear ?? ev.year;
 
@@ -296,6 +329,46 @@ function App() {
     x: 0,
     y: 0,
   });
+  const [cursorGuide, setCursorGuide] = useState({
+    visible: false,
+    screenY: 0,
+    year: null,
+  });
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(true);
+  const [filterPanelPos, setFilterPanelPos] = useState(() => ({
+    top: 72,
+    left: typeof window !== 'undefined' ? Math.max(16, window.innerWidth - 236) : 16,
+  }));
+  const filterOptions = useMemo(() => ([
+    {
+      id: 'people',
+      label: 'Люди',
+      description: 'Показывать биографии и временные промежутки жизни',
+    },
+    {
+      id: 'events',
+      label: 'События',
+      description: 'Отображать исторические события и процессы',
+    },
+  ]), []);
+  const [activeFilters, setActiveFilters] = useState(() => ({
+    people: true,
+    events: true,
+  }));
+  const panelRef = useRef(null);
+  const dragStateRef = useRef({ active: false, offsetX: 0, offsetY: 0 });
+
+  const clampPanelPosition = (pos, widthOverride) => {
+    if (typeof window === 'undefined') return pos;
+    const margin = 16;
+    const panelWidth = widthOverride ?? (isFilterPanelOpen ? 220 : 56);
+    const maxLeft = Math.max(margin, window.innerWidth - margin - panelWidth);
+    const maxTop = Math.max(margin, window.innerHeight - margin - 120);
+    return {
+      top: Math.min(Math.max(margin, pos.top), maxTop),
+      left: Math.min(Math.max(margin, pos.left), maxLeft),
+    };
+  };
 
   const [visibleStartYear, visibleEndYear] = useMemo(() => {
     const half = yearsPerScreen / 2;
@@ -356,6 +429,39 @@ function App() {
     });
   };
 
+  const handleCursorMove = (payload) => {
+    if (!payload.visible) {
+      setCursorGuide(prev => (prev.visible ? { ...prev, visible: false } : prev));
+      return;
+    }
+    setCursorGuide({
+      visible: true,
+      screenY: payload.screenY,
+      year: payload.year,
+    });
+  };
+
+  const toggleFilter = (id) => {
+    setActiveFilters(prev => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const handleFilterPanelPointerDown = (event) => {
+    if (event.button !== 0) return;
+    if (event.target.closest('[data-no-drag="true"]')) return;
+    if (!panelRef.current) return;
+    const rect = panelRef.current.getBoundingClientRect();
+    dragStateRef.current = {
+      active: true,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
+    document.body.style.userSelect = 'none';
+    event.preventDefault();
+  };
+
   const onWheel = (e) => {
     const lineHeight = typeof window !== "undefined" ? window.innerHeight : 0;
     if (!lineHeight) return;
@@ -395,6 +501,52 @@ function App() {
     return () => window.removeEventListener('wheel', handler);
   }, [centerYear, yearsPerScreen, globalMinYear, globalMaxYear]);
 
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      if (!dragStateRef.current.active) return;
+      if (typeof window === 'undefined') return;
+      event.preventDefault();
+      const margin = 16;
+      const panelWidth = isFilterPanelOpen ? 220 : 56;
+      const newLeft = event.clientX - dragStateRef.current.offsetX;
+      const newTop = event.clientY - dragStateRef.current.offsetY;
+      const maxLeft = Math.max(margin, window.innerWidth - margin - panelWidth);
+      const maxTop = Math.max(margin, window.innerHeight - margin - 120);
+      setFilterPanelPos({
+        top: Math.min(Math.max(margin, newTop), maxTop),
+        left: Math.min(Math.max(margin, newLeft), maxLeft),
+      });
+    };
+    const handlePointerUp = () => {
+      if (!dragStateRef.current.active) return;
+      dragStateRef.current.active = false;
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('pointermove', handlePointerMove, { passive: false });
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [isFilterPanelOpen]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const margin = 16;
+    const clampToViewport = () => {
+      const panelWidth = isFilterPanelOpen ? 220 : 56;
+      const maxLeft = Math.max(margin, window.innerWidth - margin - panelWidth);
+      const maxTop = Math.max(margin, window.innerHeight - margin - 120);
+      setFilterPanelPos(prev => ({
+        top: Math.min(Math.max(margin, prev.top), maxTop),
+        left: Math.min(Math.max(margin, prev.left), maxLeft),
+      }));
+    };
+    clampToViewport();
+    window.addEventListener('resize', clampToViewport);
+    return () => window.removeEventListener('resize', clampToViewport);
+  }, [isFilterPanelOpen]);
+
   return (
     <div
       className="App"
@@ -410,6 +562,100 @@ function App() {
         <button onClick={zoomIn} style={{ padding: '6px 10px' }}>+</button>
         <button onClick={zoomOut} style={{ padding: '6px 10px' }}>−</button>
       </div>
+      <div
+        ref={panelRef}
+        onPointerDown={handleFilterPanelPointerDown}
+        style={{
+          position: 'fixed',
+          top: filterPanelPos.top,
+          left: filterPanelPos.left,
+          width: isFilterPanelOpen ? 220 : 56,
+          background: 'rgba(248, 250, 252, 0.92)',
+          borderRadius: 16,
+          padding: isFilterPanelOpen ? '14px 12px 16px' : '12px',
+          boxShadow: '0 16px 36px rgba(15, 23, 42, 0.16)',
+          border: '1px solid rgba(148, 163, 184, 0.35)',
+          backdropFilter: 'blur(4px)',
+          color: '#0f172a',
+          transition: 'width 0.24s ease, padding 0.24s ease',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          cursor: 'grab',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setIsFilterPanelOpen(prev => !prev)}
+          data-no-drag="true"
+          style={{
+            alignSelf: isFilterPanelOpen ? 'flex-end' : 'center',
+            background: 'rgba(37, 99, 235, 0.14)',
+            color: '#1d4ed8',
+            border: 'none',
+            borderRadius: 12,
+            padding: '6px 12px',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
+          }}
+        >
+          {isFilterPanelOpen ? 'Скрыть' : 'Фильтры'}
+        </button>
+        {isFilterPanelOpen && (
+          <>
+            <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '0.04em' }}>Фильтры</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {filterOptions.map((option) => {
+                const isActive = activeFilters[option.id];
+                return (
+                  <button
+                    key={option.id}
+                    onClick={() => toggleFilter(option.id)}
+                    type="button"
+                    data-no-drag="true"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      gap: 2,
+                      padding: '8px 10px',
+                      borderRadius: 12,
+                      border: '1px solid rgba(148, 163, 184, 0.35)',
+                      background: isActive ? 'rgba(59, 130, 246, 0.12)' : 'rgba(226, 232, 240, 0.55)',
+                      color: '#0f172a',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                      boxShadow: isActive ? '0 10px 20px rgba(59, 130, 246, 0.16)' : 'none',
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>{option.label}</span>
+                    <span style={{ fontSize: 11, opacity: 0.68 }}>{option.description}</span>
+                    <span
+                      style={{
+                        marginTop: 4,
+                        fontSize: 10,
+                        fontWeight: 600,
+                        letterSpacing: '0.08em',
+                        textTransform: 'uppercase',
+                        color: isActive ? '#2563eb' : '#94a3b8',
+                      }}
+                    >
+                      {isActive ? 'Включено' : 'Выключено'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
       {/* Левая панель с годами */}
       <div style={{ position: 'fixed', left: 8, top: 0, height: '100vh', width: 60, pointerEvents: 'none' }}>
         {yearLabels.map((y) => (
@@ -423,8 +669,31 @@ function App() {
           visibleStartYear={visibleStartYear}
           visibleEndYear={visibleEndYear}
           onHoverChange={updateTooltip}
+          onCursorMove={handleCursorMove}
+          showPeople={!!activeFilters.people}
+          showEvents={!!activeFilters.events}
         />
       </div>
+      {cursorGuide.visible && (
+        <div
+          style={{
+            position: 'fixed',
+            top: cursorGuide.screenY - 10,
+            left: 12,
+            padding: '2px 8px',
+            background: 'rgba(15, 23, 42, 0.75)',
+            color: '#e2e8f0',
+            borderRadius: '6px',
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: '0.02em',
+            pointerEvents: 'none',
+            zIndex: 950,
+          }}
+        >
+          {Math.round(cursorGuide.year ?? 0)}
+        </div>
+      )}
       {tooltip.title && (
         <div
           style={{
