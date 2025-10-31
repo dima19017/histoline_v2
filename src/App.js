@@ -12,44 +12,9 @@ const Timeline = ({ visibleStartYear, visibleEndYear }) => {
 
   const yearToY = (year) => ((year - visibleStartYear) / (visibleEndYear - visibleStartYear)) * lineHeight;
 
-  // Подбор шага рисок исходя из масштаба (примерно каждые 30px)
-  const desiredPixelsPerTick = 30;
-  const yearsPerPixel = (visibleEndYear - visibleStartYear) / Math.max(1, lineHeight);
-  const approxStep = desiredPixelsPerTick * yearsPerPixel;
-  const candidates = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000];
-  const tickStep = candidates.find(s => s >= approxStep) || candidates[candidates.length - 1];
-  const labelStep = tickStep * 5;
-
-  const firstTick = Math.ceil(visibleStartYear / tickStep) * tickStep;
-  const ticks = [];
-  for (let year = firstTick; year <= visibleEndYear; year += tickStep) {
-    ticks.push(year);
-  }
-
   return (
     <svg width={200} height={lineHeight}>
       <line x1={100} y1={0} x2={100} y2={lineHeight} stroke="black" strokeWidth={2} />
-      {ticks.map((year) => {
-        const y = yearToY(year);
-        const isLabel = Math.round(year / labelStep) === year / labelStep;
-        return (
-          <g key={year}>
-            <line
-              x1={isLabel ? 90 : 95}
-              x2={isLabel ? 110 : 105}
-              y1={y}
-              y2={y}
-              stroke={isLabel ? "#666" : "#999"}
-              strokeWidth={isLabel ? 2 : 1}
-            />
-            {isLabel && (
-              <text x={85} y={y + 4} fontSize={10} textAnchor="end" fill="#444">
-                {year}
-              </text>
-            )}
-          </g>
-        );
-      })}
       {people.map((p, i) => {
         const yStart = yearToY(p.birthDate);
         const yEnd = yearToY(p.deathDate);
@@ -89,6 +54,23 @@ function App() {
     return [start, end];
   }, [centerYear, yearsPerScreen, globalMinYear, globalMaxYear]);
 
+  // Подписи лет на краю экрана
+  const lineHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+  const yearsPerPixel = yearsPerScreen / Math.max(1, lineHeight);
+  const desiredPixelsPerLabel = 60;
+  const approxLabelStep = desiredPixelsPerLabel * yearsPerPixel;
+  const stepCandidates = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000];
+  const labelStep = stepCandidates.find(s => s >= approxLabelStep) || stepCandidates[stepCandidates.length - 1];
+  const firstLabel = Math.ceil(visibleStartYear / labelStep) * labelStep;
+  const yearLabels = [];
+  for (let y = firstLabel; y <= visibleEndYear; y += labelStep) {
+    yearLabels.push(y);
+  }
+  const yearToY = (year) => {
+    if (!lineHeight) return 0;
+    return ((year - visibleStartYear) / (visibleEndYear - visibleStartYear)) * lineHeight;
+  };
+
   const zoomIn = () => {
     setYearsPerScreen(prev => Math.max(10, Math.round(prev / 2)));
   };
@@ -99,11 +81,29 @@ function App() {
   const onWheel = (e) => {
     const lineHeight = typeof window !== "undefined" ? window.innerHeight : 0;
     if (!lineHeight) return;
+    if (e.ctrlKey) {
+      // Zoom: ctrl + wheel. Use multiplicative scaling based on deltaY
+      const zoomFactor = Math.pow(1.1, Math.sign(e.deltaY));
+      const newYearsPerScreen = Math.min(
+        globalMaxYear - globalMinYear,
+        Math.max(5, Math.round(yearsPerScreen * zoomFactor))
+      );
+      // Keep center fixed while zooming, then clamp if needed
+      const half = newYearsPerScreen / 2;
+      let nextCenter = centerYear;
+      if (nextCenter - half < globalMinYear) nextCenter = globalMinYear + half;
+      if (nextCenter + half > globalMaxYear) nextCenter = globalMaxYear - half;
+      setCenterYear(nextCenter);
+      setYearsPerScreen(newYearsPerScreen);
+      e.preventDefault(); // prevent browser zoom
+      return;
+    }
+
+    // Pan: normal wheel scroll moves through years
     const yearsPerPixel = yearsPerScreen / lineHeight;
     const deltaYears = e.deltaY * yearsPerPixel;
     let nextCenter = centerYear + deltaYears;
     const half = yearsPerScreen / 2;
-    // Clamp to keep window within global bounds
     if (nextCenter - half < globalMinYear) nextCenter = globalMinYear + half;
     if (nextCenter + half > globalMaxYear) nextCenter = globalMaxYear - half;
     setCenterYear(nextCenter);
@@ -131,6 +131,14 @@ function App() {
       <div style={{ position: 'fixed', top: 16, right: 16, display: 'flex', gap: 8 }}>
         <button onClick={zoomIn} style={{ padding: '6px 10px' }}>+</button>
         <button onClick={zoomOut} style={{ padding: '6px 10px' }}>−</button>
+      </div>
+      {/* Левая панель с годами */}
+      <div style={{ position: 'fixed', left: 8, top: 0, height: '100vh', width: 60, pointerEvents: 'none' }}>
+        {yearLabels.map((y) => (
+          <div key={y} style={{ position: 'absolute', top: yearToY(y) - 6, left: 0, color: '#444', fontSize: 12 }}>
+            {y}
+          </div>
+        ))}
       </div>
       <div style={{ width: '200px', height: '100vh' }}>
         <Timeline visibleStartYear={visibleStartYear} visibleEndYear={visibleEndYear} />
