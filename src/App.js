@@ -12,19 +12,66 @@ const Timeline = ({ visibleStartYear, visibleEndYear }) => {
 
   const yearToY = (year) => ((year - visibleStartYear) / (visibleEndYear - visibleStartYear)) * lineHeight;
 
+  const axisX = 180; // сдвигаем ось правее, чтобы слева было место под подписи
   return (
-    <svg width={200} height={lineHeight}>
-      <line x1={100} y1={0} x2={100} y2={lineHeight} stroke="black" strokeWidth={2} />
-      {people.map((p, i) => {
-        const yStart = yearToY(p.birthDate);
-        const yEnd = yearToY(p.deathDate);
-        return (
-          <g key={i}>
-            <line x1={80} x2={120} y1={yStart} y2={yEnd} stroke="blue" strokeWidth={6} />
-            <text x={130} y={yStart + 5} fontSize={12}>{p.name}</text>
-          </g>
-        );
-      })}
+    <svg width={420} height={lineHeight}>
+      <line x1={axisX} y1={0} x2={axisX} y2={lineHeight} stroke="black" strokeWidth={2} />
+      {(() => {
+        // Плотная раскладка у оси: альтернативно вправо/влево, без вертикальных пересечений в колонке
+        const sorted = [...people].sort((a, b) => a.birthDate - b.birthDate);
+        const columnLastEndYear = new Map(); // colIndex -> last death year
+
+        const baseAxisX = axisX;
+        const columnSpacing = 24;
+        const placements = [];
+
+        const candidateCol = (i) => {
+          const magnitude = Math.floor(i / 2) + 1; // 1,1,2,2,3,3...
+          const sign = i % 2 === 0 ? 1 : -1; // +,-,+,-
+          return sign * magnitude; // 1,-1,2,-2,3,-3...
+        };
+
+        for (const p of sorted) {
+          let chosen = null;
+          // ищем ближайшую к оси колонку, где нет пересечения
+          for (let i = 0; i < 100; i++) {
+            const col = candidateCol(i);
+            const lastEnd = columnLastEndYear.get(col);
+            if (lastEnd === undefined || p.birthDate >= lastEnd) {
+              chosen = col;
+              break;
+            }
+          }
+          if (chosen === null) {
+            chosen = candidateCol(100); // fallback очень далеко, но фактически недостижимо при малом числе людей
+          }
+          columnLastEndYear.set(chosen, p.deathDate);
+          placements.push({ person: p, col: chosen });
+        }
+
+        return placements.map(({ person: p, col }, i) => {
+          const yStart = yearToY(p.birthDate);
+          const yEnd = yearToY(p.deathDate);
+          const x = col > 0 ? baseAxisX + Math.abs(col) * columnSpacing : baseAxisX - Math.abs(col) * columnSpacing;
+          const color = ['#1d4ed8', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444'][i % 5];
+          const labelOffset = 8;
+          const isLeft = col < 0;
+          return (
+            <g key={`${p.name}-${col}`}>
+              <line x1={x} x2={x} y1={yStart} y2={yEnd} stroke={color} strokeWidth={6} />
+              <text
+                x={isLeft ? x - labelOffset : x + labelOffset}
+                y={yStart + 4}
+                fontSize={12}
+                fill="#333"
+                textAnchor={isLeft ? 'end' : 'start'}
+              >
+                {p.name}
+              </text>
+            </g>
+          );
+        });
+      })()}
     </svg>
   );
 };
@@ -140,7 +187,7 @@ function App() {
           </div>
         ))}
       </div>
-      <div style={{ width: '200px', height: '100vh' }}>
+      <div style={{ width: '420px', height: '100vh' }}>
         <Timeline visibleStartYear={visibleStartYear} visibleEndYear={visibleEndYear} />
       </div>
     </div>
