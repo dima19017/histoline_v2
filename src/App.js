@@ -6,21 +6,69 @@ const people = [
     name: "Пушкин А.С.",
     birthDate: 1799,
     deathDate: 1837,
-    description: "Русский поэт и писатель, основоположник современного русского литературного языка."
+    description: "Русский поэт и писатель, основоположник современного русского литературного языка.",
+    category: 'culture',
   },
   {
     name: "Лермонтов М.Ю.",
     birthDate: 1814,
     deathDate: 1841,
-    description: "Русский поэт и прозаик, автор романа 'Герой нашего времени'."
+    description: "Русский поэт и прозаик, автор романа 'Герой нашего времени'.",
+    category: 'culture',
   },
   {
     name: "Толстой Л.Н.",
     birthDate: 1828,
     deathDate: 1910,
-    description: "Русский писатель, автор 'Войны и мира' и 'Анны Карениной'."
+    description: "Русский писатель, автор 'Войны и мира' и 'Анны Карениной'.",
+    category: 'culture',
+  },
+  {
+    name: "Thomas Jefferson",
+    birthDate: 1743,
+    deathDate: 1826,
+    description: "3-й президент США, автор Декларации независимости; его поздние годы пересекаются с жизнью Пушкина.",
+    category: 'politics',
+  },
+  {
+    name: "James Monroe",
+    birthDate: 1758,
+    deathDate: 1831,
+    description: "5-й президент США и автор доктрины Монро; современник раннего периода русских поэтов.",
+    category: 'politics',
+  },
+  {
+    name: "Abraham Lincoln",
+    birthDate: 1809,
+    deathDate: 1865,
+    description: "16-й президент США, проведший страну через Гражданскую войну; его эпоха пересекается с Лермонтовым и Толстым.",
+    category: 'politics',
+  },
+  {
+    name: "Ulysses S. Grant",
+    birthDate: 1822,
+    deathDate: 1885,
+    description: "18-й президент США и главнокомандующий армии Союза; его жизнь совпадает с творчеством Толстого.",
+    category: 'politics',
+  },
+  {
+    name: "Theodore Roosevelt",
+    birthDate: 1858,
+    deathDate: 1919,
+    description: "26-й президент США, реформатор и лауреат Нобелевской премии мира; современник позднего Толстого.",
+    category: 'politics',
   },
 ];
+
+const CATEGORY_LABELS = {
+  culture: 'Культура',
+  politics: 'Политика',
+};
+
+const PEOPLE_CATEGORIES = Array.from(new Set(people.map(p => p.category ?? 'other'))).map((id) => ({
+  id,
+  label: CATEGORY_LABELS[id] ?? id,
+}));
 
 const events = [
   {
@@ -92,6 +140,9 @@ const Timeline = ({
   onCursorMove,
   showPeople,
   showEvents,
+  peopleCategories,
+  highlightedItem,
+  onHighlightChange,
 }) => {
   const lineHeight = typeof window !== "undefined" ? window.innerHeight : 0;
   const yearsPerPixel = (visibleEndYear - visibleStartYear) / Math.max(1, lineHeight);
@@ -116,6 +167,7 @@ const Timeline = ({
   const handleMouseLeave = () => {
     if (!onCursorMove) return;
     onCursorMove({ visible: false });
+    onHighlightChange?.(null);
   };
 
   return (
@@ -129,7 +181,13 @@ const Timeline = ({
       {(() => {
         if (!showPeople) return null;
         // Плотная раскладка у оси: альтернативно вправо/влево, без вертикальных пересечений в колонке
-        const sorted = [...people].sort((a, b) => a.birthDate - b.birthDate);
+        const filtered = people.filter((person) => {
+          if (!person.category) return true;
+          if (!peopleCategories) return true;
+          return peopleCategories[person.category] !== false;
+        });
+        if (filtered.length === 0) return null;
+        const sorted = [...filtered].sort((a, b) => a.birthDate - b.birthDate);
         const columnLastEndYear = new Map(); // colIndex -> last death year
 
         const baseAxisX = axisX;
@@ -167,6 +225,7 @@ const Timeline = ({
           const color = ['#1d4ed8', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444'][i % 5];
           const labelOffset = 8;
           const isLeft = col < 0;
+          const isHighlighted = highlightedItem?.type === 'person' && highlightedItem.id === p.name;
           return (
             <g
               key={`${p.name}-${col}`}
@@ -180,6 +239,7 @@ const Timeline = ({
                   x: e.clientX + 18,
                   y: e.clientY - 12,
                 });
+                onHighlightChange?.({ type: 'person', id: p.name });
               }}
               onMouseMove={(e) => {
                 onHoverChange({
@@ -190,18 +250,33 @@ const Timeline = ({
                   x: e.clientX + 18,
                   y: e.clientY - 12,
                 });
+                onHighlightChange?.({ type: 'person', id: p.name });
               }}
               onMouseLeave={() => {
                 onHoverChange({ visible: false });
+                onHighlightChange?.(null);
               }}
             >
-              <line x1={x} x2={x} y1={yStart} y2={yEnd} stroke={color} strokeWidth={6} />
+              <line
+                x1={x}
+                x2={x}
+                y1={yStart}
+                y2={yEnd}
+                stroke={color}
+                strokeWidth={isHighlighted ? 9 : 6}
+                strokeLinecap="round"
+                style={{
+                  filter: isHighlighted ? 'drop-shadow(0 0 8px rgba(37, 99, 235, 0.45))' : 'none',
+                  transition: 'stroke-width 0.18s ease, filter 0.18s ease',
+                }}
+              />
               <text
                 x={isLeft ? x - labelOffset : x + labelOffset}
                 y={yStart + 4}
-                fontSize={12}
-                fill="#333"
+                fontSize={isHighlighted ? 13 : 12}
+                fill={isHighlighted ? '#1d4ed8' : '#333'}
                 textAnchor={isLeft ? 'end' : 'start'}
+                style={{ transition: 'font-size 0.18s ease, fill 0.18s ease' }}
               >
                 {p.name}
               </text>
@@ -258,6 +333,7 @@ const Timeline = ({
           const color = ['#7c3aed', '#f97316', '#22c55e', '#e11d48', '#14b8a6'][idx % 5];
           const labelOffset = 10;
           const subtitle = startYear === endYear ? `${startYear} год` : `${startYear} — ${endYear} гг.`;
+          const isHighlighted = highlightedItem?.type === 'event' && highlightedItem.id === ev.title;
           return (
             <g
               key={`${ev.title}-${col}`}
@@ -271,6 +347,7 @@ const Timeline = ({
                   x: e.clientX + 18,
                   y: e.clientY - 12,
                 });
+                onHighlightChange?.({ type: 'event', id: ev.title });
               }}
               onMouseMove={(e) => {
                 onHoverChange({
@@ -281,21 +358,44 @@ const Timeline = ({
                   x: e.clientX + 18,
                   y: e.clientY - 12,
                 });
+                onHighlightChange?.({ type: 'event', id: ev.title });
               }}
               onMouseLeave={() => {
                 onHoverChange({ visible: false });
+                onHighlightChange?.(null);
               }}
             >
               {endYear !== startYear && (
-                <line x1={x} x2={x} y1={yStart} y2={yEnd} stroke={color} strokeWidth={4} strokeLinecap="round" />
+                <line
+                  x1={x}
+                  x2={x}
+                  y1={yStart}
+                  y2={yEnd}
+                  stroke={color}
+                  strokeWidth={isHighlighted ? 6 : 4}
+                  strokeLinecap="round"
+                  style={{ transition: 'stroke-width 0.18s ease' }}
+                />
               )}
-              <circle cx={x} cy={yMarker} r={6} fill={color} stroke="#fff" strokeWidth={2} />
+              <circle
+                cx={x}
+                cy={yMarker}
+                r={isHighlighted ? 7.5 : 6}
+                fill={color}
+                stroke="#fff"
+                strokeWidth={isHighlighted ? 2.5 : 2}
+                style={{
+                  transition: 'r 0.18s ease, stroke-width 0.18s ease',
+                  filter: isHighlighted ? 'drop-shadow(0 0 10px rgba(99, 102, 241, 0.5))' : 'none',
+                }}
+              />
               <text
                 x={isLeft ? x - labelOffset : x + labelOffset}
                 y={yMarker + 4}
-                fontSize={11}
-                fill="#222"
+                fontSize={isHighlighted ? 12 : 11}
+                fill={isHighlighted ? '#312e81' : '#222'}
                 textAnchor={isLeft ? 'end' : 'start'}
+                style={{ transition: 'font-size 0.18s ease, fill 0.18s ease' }}
               >
                 {ev.title}
               </text>
@@ -339,6 +439,7 @@ function App() {
     top: 72,
     left: typeof window !== 'undefined' ? Math.max(16, window.innerWidth - 236) : 16,
   }));
+  const [highlightedItem, setHighlightedItem] = useState(null);
   const filterOptions = useMemo(() => ([
     {
       id: 'people',
@@ -354,6 +455,10 @@ function App() {
   const [activeFilters, setActiveFilters] = useState(() => ({
     people: true,
     events: true,
+    peopleCategories: PEOPLE_CATEGORIES.reduce((acc, category) => {
+      acc[category.id] = true;
+      return acc;
+    }, {}),
   }));
   const panelRef = useRef(null);
   const dragStateRef = useRef({ active: false, offsetX: 0, offsetY: 0 });
@@ -445,6 +550,16 @@ function App() {
     setActiveFilters(prev => ({
       ...prev,
       [id]: !prev[id],
+    }));
+  };
+
+  const togglePeopleCategory = (categoryId) => {
+    setActiveFilters(prev => ({
+      ...prev,
+      peopleCategories: {
+        ...prev.peopleCategories,
+        [categoryId]: !prev.peopleCategories?.[categoryId],
+      },
     }));
   };
 
@@ -614,42 +729,81 @@ function App() {
               {filterOptions.map((option) => {
                 const isActive = activeFilters[option.id];
                 return (
-                  <button
+                  <div
                     key={option.id}
-                    onClick={() => toggleFilter(option.id)}
-                    type="button"
-                    data-no-drag="true"
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'flex-start',
-                      gap: 2,
-                      padding: '8px 10px',
-                      borderRadius: 12,
-                      border: '1px solid rgba(148, 163, 184, 0.35)',
-                      background: isActive ? 'rgba(59, 130, 246, 0.12)' : 'rgba(226, 232, 240, 0.55)',
-                      color: '#0f172a',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                      boxShadow: isActive ? '0 10px 20px rgba(59, 130, 246, 0.16)' : 'none',
-                    }}
+                    style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
                   >
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>{option.label}</span>
-                    <span style={{ fontSize: 11, opacity: 0.68 }}>{option.description}</span>
-                    <span
+                    <button
+                      onClick={() => toggleFilter(option.id)}
+                      type="button"
+                      data-no-drag="true"
                       style={{
-                        marginTop: 4,
-                        fontSize: 10,
-                        fontWeight: 600,
-                        letterSpacing: '0.08em',
-                        textTransform: 'uppercase',
-                        color: isActive ? '#2563eb' : '#94a3b8',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        gap: 2,
+                        padding: '8px 10px',
+                        borderRadius: 12,
+                        border: '1px solid rgba(148, 163, 184, 0.35)',
+                        background: isActive ? 'rgba(59, 130, 246, 0.12)' : 'rgba(226, 232, 240, 0.55)',
+                        color: '#0f172a',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                        boxShadow: isActive ? '0 10px 20px rgba(59, 130, 246, 0.16)' : 'none',
                       }}
                     >
-                      {isActive ? 'Включено' : 'Выключено'}
-                    </span>
-                  </button>
+                      <span style={{ fontWeight: 600, fontSize: 13 }}>{option.label}</span>
+                      <span style={{ fontSize: 11, opacity: 0.68 }}>{option.description}</span>
+                      <span
+                        style={{
+                          marginTop: 4,
+                          fontSize: 10,
+                          fontWeight: 600,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          color: isActive ? '#2563eb' : '#94a3b8',
+                        }}
+                      >
+                        {isActive ? 'Включено' : 'Выключено'}
+                      </span>
+                    </button>
+                    {option.id === 'people' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingLeft: 6 }}>
+                        {PEOPLE_CATEGORIES.map(({ id, label }) => {
+                          const categoryActive = activeFilters.peopleCategories?.[id] !== false;
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              data-no-drag="true"
+                              onClick={() => togglePeopleCategory(id)}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '6px 8px',
+                                borderRadius: 10,
+                                border: '1px solid rgba(148, 163, 184, 0.25)',
+                                background: categoryActive ? 'rgba(59, 130, 246, 0.14)' : 'rgba(226, 232, 240, 0.45)',
+                                color: '#0f172a',
+                                cursor: activeFilters.people ? 'pointer' : 'not-allowed',
+                                opacity: activeFilters.people ? 1 : 0.45,
+                                fontSize: 12,
+                                transition: 'background 0.15s ease, transform 0.15s ease',
+                              }}
+                              disabled={!activeFilters.people}
+                            >
+                              <span>{label}</span>
+                              <span style={{ fontWeight: 600, fontSize: 11, color: categoryActive ? '#2563eb' : '#94a3b8' }}>
+                                {categoryActive ? 'On' : 'Off'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -672,6 +826,9 @@ function App() {
           onCursorMove={handleCursorMove}
           showPeople={!!activeFilters.people}
           showEvents={!!activeFilters.events}
+          peopleCategories={activeFilters.peopleCategories}
+      highlightedItem={highlightedItem}
+      onHighlightChange={setHighlightedItem}
         />
       </div>
       {cursorGuide.visible && (
